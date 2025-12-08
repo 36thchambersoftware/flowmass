@@ -1,0 +1,6 @@
+.env.example
+.env
+*.exe
+dist/
+build/
+.DS_Store
