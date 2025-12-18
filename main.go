@@ -17,6 +17,8 @@ func main() {
 	stateFile := flag.String("state", os.Getenv("STATE_FILE"), "Path to state file (tracks mint counter and processed deposits)")
 	mintPrice := flag.Int64("mint-price", 27000000, "Mint price in lovelace (default: 27000000)")
 	signingKeyFile := flag.String("signing-key", os.Getenv("SIGNING_KEY_FILE"), "Path to signing key for transaction signing")
+	network := flag.String("network", os.Getenv("CARDANO_NETWORK"), "Cardano network: mainnet or preprod")
+	testnetMagic := flag.String("testnet-magic", os.Getenv("TESTNET_MAGIC"), "Testnet magic number for preprod (if needed)")
 	flag.Parse()
 
 	// Validate required configuration
@@ -43,8 +45,19 @@ func main() {
 	log.Printf("Script: %s", *scriptFile)
 	log.Printf("Metadata: %s", *metadataFile)
 	log.Printf("State: %s", *stateFile)
+	log.Printf("Network: %s", *network)
 
 	// Initialize engine
+	if *network == "" {
+		*network = "mainnet"
+	}
+	if *network == "preprod" && *testnetMagic == "" {
+		*testnetMagic = os.Getenv("TESTNET_MAGIC")
+		if *testnetMagic == "" {
+			*testnetMagic = "1"
+		}
+	}
+
 	eng, err := NewEngine(
 		*monitorAddr,
 		*mintPrice,
@@ -53,6 +66,8 @@ func main() {
 		*metadataFile,
 		*stateFile,
 		*blockfrostKey,
+		*network,
+		*testnetMagic,
 		*signingKeyFile,
 	)
 	if err != nil {

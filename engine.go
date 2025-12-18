@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -18,16 +21,33 @@ type Engine struct {
 	metadataFile   string
 	state          *State
 	blockfrostKey  string
+	network        string
+	testnetMagic   string
 	signingKeyFile string
 	quit           chan struct{}
 }
 
 // NewEngine creates a new minting engine.
-func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metadataFile, stateFile, blockfrostKey, signingKeyFile string) (*Engine, error) {
+func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metadataFile, stateFile, blockfrostKey, network, testnetMagic, signingKeyFile string) (*Engine, error) {
 	// Load or initialize state
 	state, err := LoadState(stateFile)
 	if err != nil {
 		return nil, err
+	}
+
+	// If we have a Blockfrost key, sync next mint counter with on-chain assets
+	if blockfrostKey != "" {
+		maxOnChain, err := getMaxOnChainFlowmass(policyID, blockfrostKey, network)
+		if err == nil && maxOnChain+1 > state.NextMintCounter {
+			state.mu.Lock()
+			state.NextMintCounter = maxOnChain + 1
+			state.mu.Unlock()
+			if err := state.Save(); err != nil {
+				log.Printf("[engine] warning: failed to save state after syncing on-chain: %v", err)
+			} else {
+				log.Printf("[engine] synced next_mint_counter to %d based on on-chain assets", state.NextMintCounter)
+			}
+		}
 	}
 
 	return &Engine{
@@ -38,6 +58,8 @@ func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metada
 		metadataFile:   metadataFile,
 		state:          state,
 		blockfrostKey:  blockfrostKey,
+		network:        network,
+		testnetMagic:   testnetMagic,
 		signingKeyFile: signingKeyFile,
 		quit:           make(chan struct{}),
 	}, nil
@@ -110,7 +132,12 @@ func (e *Engine) fetchDeposits() ([]Deposit, error) {
 // fetchDepositsBlockfrost queries Blockfrost for UTxOs.
 func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 	lovelaceTarget := e.mintPrice
-	base := "https://cardano-mainnet.blockfrost.io/api/v0"
+	var base string
+	if e.network == "mainnet" {
+		base = "https://cardano-mainnet.blockfrost.io/api/v0"
+	} else {
+		base = "https://cardano-preprod.blockfrost.io/api/v0"
+	}
 
 	cmd := exec.Command("curl", "-s",
 		"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
@@ -145,16 +172,82 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 			}
 		}
 		if lovelace == lovelaceTarget {
-			// For Blockfrost, we don't have sender readily; we'd need to query tx details
-			// For now, use a placeholder; in production, resolve sender from UTxO inputs
+			// Resolve sender from transaction inputs via Blockfrost /txs/{hash}/utxos
+			sender := "unknown"
+			txCmd := exec.Command("curl", "-s",
+				"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
+				fmt.Sprintf("%s/txs/%s/utxos", base, u.TxHash))
+			if txOut, err := txCmd.Output(); err == nil {
+				var txDetails struct {
+					Inputs []struct {
+						Address string `json:"address"`
+					} `json:"inputs"`
+				}
+				if err := json.Unmarshal(txOut, &txDetails); err == nil && len(txDetails.Inputs) > 0 {
+					sender = txDetails.Inputs[0].Address
+				}
+			}
+
 			deposits = append(deposits, Deposit{
 				TxHash:     u.TxHash,
-				SenderAddr: "unknown", // TODO: resolve from transaction
+				SenderAddr: sender,
 				Amount:     lovelace,
 			})
 		}
 	}
 	return deposits, nil
+}
+
+// getMaxOnChainFlowmass queries Blockfrost for assets under the policy and
+// returns the maximum index N found for asset names decoding to "Flowmass N".
+func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error) {
+	var base string
+	if network == "mainnet" {
+		base = "https://cardano-mainnet.blockfrost.io/api/v0"
+	} else {
+		base = "https://cardano-preprod.blockfrost.io/api/v0"
+	}
+	max := 0
+	// fetch several pages to be safer (pagination)
+	for page := 1; page <= 10; page++ {
+		cmd := exec.Command("curl", "-s",
+			"-H", fmt.Sprintf("project_id:%s", blockfrostKey),
+			fmt.Sprintf("%s/assets/policy/%s?page=%d", base, policyID, page))
+		out, err := cmd.Output()
+		if err != nil {
+			return max, err
+		}
+
+		var assets []struct {
+			Asset     string `json:"asset"`
+			AssetName string `json:"asset_name"`
+		}
+		if err := json.Unmarshal(out, &assets); err != nil {
+			return max, err
+		}
+		if len(assets) == 0 {
+			break
+		}
+
+		for _, a := range assets {
+			// asset_name is hex-encoded; decode to text
+			if a.AssetName == "" {
+				continue
+			}
+			if b, err := hex.DecodeString(a.AssetName); err == nil {
+				name := string(b)
+				if strings.HasPrefix(name, "Flowmass ") {
+					var n int
+					if _, err := fmt.Sscanf(name, "Flowmass %d", &n); err == nil {
+						if n > max {
+							max = n
+						}
+					}
+				}
+			}
+		}
+	}
+	return max, nil
 }
 
 // fetchDepositsMock reads from mock_deposits.json for testing.
@@ -197,40 +290,73 @@ func (e *Engine) fetchDepositsMock() ([]Deposit, error) {
 func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	log.Printf("[engine] minting NFT for sender %s (tx=%s)", dep.SenderAddr, dep.TxHash)
 
-	// Increment mint counter
-	nextID := e.state.NextMintID()
-	nftName := fmt.Sprintf("nft%d", nextID)
+	// Reserve mint counter (persist immediately) to avoid duplicates
+	id, err := e.state.ReserveNextMintID()
+	if err != nil {
+		return fmt.Errorf("failed to reserve mint id: %v", err)
+	}
+	// Display name and hex-encoded on-chain asset name
+	displayName := fmt.Sprintf("Flowmass %d", id)
+	hexName := hex.EncodeToString([]byte(displayName))
 
 	// Get current slot
-	slot, err := GetCurrentSlot()
+	slot, err := GetCurrentSlotNetwork(e.network, e.testnetMagic)
 	if err != nil {
 		return fmt.Errorf("failed to get current slot: %v", err)
 	}
 	invalidHereafter := slot + 10000
 
-	log.Printf("[engine] minting %s (slot=%d, invalid-hereafter=%d)", nftName, slot, invalidHereafter)
+	log.Printf("[engine] minting %s (hex=%s) (slot=%d, invalid-hereafter=%d)", displayName, hexName, slot, invalidHereafter)
 
-	// 1. Get UTxO from monitor address
-	utxos, err := GetUTxOs(e.monitorAddr)
+	// 1. Get UTxO from monitor address (choose lovelace-only UTxOs that cover mint + fee buffer)
+	utxos, err := GetUTxOs(e.monitorAddr, e.network, e.testnetMagic)
 	if err != nil {
 		return fmt.Errorf("failed to get utxos: %v", err)
 	}
-	if len(utxos) == 0 {
-		return fmt.Errorf("no utxos available at monitor address")
+
+	// collect lovelace-only candidates
+	var candidates []UTxO
+	for _, u := range utxos {
+		if u.Assets != nil && len(u.Assets) == 0 {
+			candidates = append(candidates, u)
+		}
 	}
-	utxoIn := utxos[0]
-	log.Printf("[engine] using UTXO: %s", utxoIn)
+	if len(candidates) == 0 {
+		return fmt.Errorf("no lovelace-only UTxO available at monitor address")
+	}
+
+	// sort descending by lovelace to minimize inputs
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Lovelace > candidates[j].Lovelace })
+
+	// require mint price + buffer (2 ADA) to cover fees and change
+	required := e.mintPrice + 2000000
+	var selectedIns []string
+	var sum int64
+	for _, c := range candidates {
+		selectedIns = append(selectedIns, c.ID)
+		sum += c.Lovelace
+		if sum >= required {
+			break
+		}
+	}
+	if sum < required {
+		return fmt.Errorf("insufficient lovelace in lovelace-only UTxOs: have=%d required=%d", sum, required)
+	}
+
+	log.Printf("[engine] selected UTxOs: %v (total lovelace=%d)", selectedIns, sum)
 
 	// 2. Build mint transaction
 	txFile, err := BuildTransaction(
-		utxoIn,
+		selectedIns,
 		e.monitorAddr,
 		dep.SenderAddr,
-		nftName,
+		hexName,
 		e.policyID,
 		e.scriptFile,
 		e.metadataFile,
 		invalidHereafter,
+		e.network,
+		e.testnetMagic,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to build transaction: %v", err)
@@ -238,18 +364,24 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	log.Printf("[engine] built transaction: %s", txFile)
 
 	// 3. Sign transaction
-	signedFile, err := SignTransaction(txFile, e.signingKeyFile)
+	signedFile, err := SignTransaction(txFile, e.signingKeyFile, e.network, e.testnetMagic)
 	if err != nil {
 		return fmt.Errorf("failed to sign transaction: %v", err)
 	}
 	log.Printf("[engine] signed transaction: %s", signedFile)
 
 	// 4. Submit transaction
-	txHash, err := SubmitTransaction(signedFile)
+	txHash, err := SubmitTransaction(signedFile, e.network, e.testnetMagic)
 	if err != nil {
 		return fmt.Errorf("failed to submit transaction: %v", err)
 	}
 	log.Printf("[engine] submitted transaction: %s", txHash)
+
+	// Mark deposit processed immediately and persist state to avoid reprocessing on restart.
+	e.state.MarkProcessed(dep.TxHash)
+	if err := e.state.Save(); err != nil {
+		log.Printf("[engine] warning: failed to save state after marking processed: %v", err)
+	}
 
 	return nil
 }

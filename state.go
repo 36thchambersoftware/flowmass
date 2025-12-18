@@ -78,6 +78,30 @@ func (s *State) NextMintID() int {
 	return id
 }
 
+// ReserveNextMintID increments the counter and persists the state immediately.
+// This ensures reserved token names are not reused even if the process crashes later.
+func (s *State) ReserveNextMintID() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := s.NextMintCounter
+	s.NextMintCounter++
+
+	data, err := json.MarshalIndent(map[string]interface{}{
+		"next_mint_counter":  s.NextMintCounter,
+		"processed_deposits": s.ProcessedDeposits,
+	}, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+
+	if err := ioutil.WriteFile(s.filePath, data, 0o600); err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+
 // Save persists state to file.
 func (s *State) Save() error {
 	s.mu.Lock()
