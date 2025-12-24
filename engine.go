@@ -36,17 +36,18 @@ func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metada
 	}
 
 	// If we have a Blockfrost key, sync next mint counter with on-chain assets
-	if blockfrostKey != "" {
-		maxOnChain, err := getMaxOnChainFlowmass(policyID, blockfrostKey, network)
-		if err == nil && maxOnChain+1 > state.NextMintCounter {
-			state.mu.Lock()
-			state.NextMintCounter = maxOnChain + 1
-			state.mu.Unlock()
-			if err := state.Save(); err != nil {
-				log.Printf("[engine] warning: failed to save state after syncing on-chain: %v", err)
-			} else {
-				log.Printf("[engine] synced next_mint_counter to %d based on on-chain assets", state.NextMintCounter)
-			}
+	if blockfrostKey == "" {
+		return nil, fmt.Errorf("no blockfrost key provided; skipping on-chain sync")
+	}
+	maxOnChain, err := getMaxOnChainFlowmass(policyID, blockfrostKey, network)
+	if err == nil && maxOnChain+1 > state.NextMintCounter {
+		state.mu.Lock()
+		state.NextMintCounter = maxOnChain + 1
+		state.mu.Unlock()
+		if err := state.Save(); err != nil {
+			return nil, fmt.Errorf("failed to save state after syncing on-chain")
+		} else {
+			log.Printf("[engine] synced next_mint_counter to %d based on on-chain assets", state.NextMintCounter)
 		}
 	}
 
@@ -67,10 +68,10 @@ func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metada
 
 // Start begins the deposit polling loop.
 func (e *Engine) Start() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
-	log.Println("[engine] Starting deposit polling (30s interval)")
+	log.Println("[engine] Starting deposit polling (60s interval)")
 
 	for {
 		select {
@@ -138,16 +139,17 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 	} else {
 		base = "https://cardano-preprod.blockfrost.io/api/v0"
 	}
-
+	url := fmt.Sprintf("%s/addresses/%s/utxos", base, e.monitorAddr)
 	cmd := exec.Command("curl", "-s",
 		"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
-		fmt.Sprintf("%s/addresses/%s/utxos", base, e.monitorAddr))
+		url)
 
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("blockfrost curl failed: %w", err)
 	}
 
+	// Try parsing expected array response first
 	var utxos []struct {
 		TxHash string `json:"tx_hash"`
 		Amount []struct {
@@ -156,7 +158,15 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 		} `json:"amount"`
 	}
 	if err := json.Unmarshal(out, &utxos); err != nil {
-		return nil, err
+		// Not the expected array — likely an error object from Blockfrost.
+		// Try to parse a common error shape and return a helpful message.
+		var errObj map[string]interface{}
+		if jerr := json.Unmarshal(out, &errObj); jerr == nil {
+			// include the full body in the error for easier debugging
+			return nil, fmt.Errorf("unexpected Blockfrost response for %s: %v", url, errObj)
+		}
+		// Last resort: return raw body as string
+		return nil, fmt.Errorf("failed to parse Blockfrost utxos response: %v; raw=%s", err, strings.TrimSpace(string(out)))
 	}
 
 	var deposits []Deposit

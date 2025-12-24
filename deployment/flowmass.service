@@ -1,0 +1,21 @@
+[Unit]
+Description=Flowmass NFT Minting Engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Optionally set User=flowmass to run as a dedicated user (create user before enabling)
+# User=flowmass
+Type=simple
+WorkingDirectory=/var/lib/flowmass
+EnvironmentFile=-/etc/flowmass/flowmass.env
+ExecStart=/usr/local/bin/flowmass
+Restart=on-failure
+RestartSec=5s
+# Send stdout/stderr to journald
+StandardOutput=journal
+StandardError=journal
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
