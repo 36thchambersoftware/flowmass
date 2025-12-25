@@ -4,3 +4,10 @@
 dist/
 build/
 .DS_Store
+
+# Ignore built Go binary
+flowmass
+
+# Ignore temporary utxo and tx files
+/tmp/utxos.json
+/tmp/tx.raw
