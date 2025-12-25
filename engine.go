@@ -51,6 +51,28 @@ func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metada
 		}
 	}
 
+	// Reconcile any pending reservations saved from a previous run.
+	if len(state.PendingDeposits) > 0 {
+		if maxOnChain == 0 {
+			// try to fetch maxOnChain if not already available
+			if m, merr := getMaxOnChainFlowmass(policyID, blockfrostKey, network); merr == nil {
+				maxOnChain = m
+			}
+		}
+		for tx, id := range state.PendingDeposits {
+			if maxOnChain >= id {
+				log.Printf("[engine] pending reservation for tx %s (id=%d) appears minted on-chain; marking processed", tx, id)
+				state.MarkProcessed(tx)
+				if err := state.ClearPending(tx); err != nil {
+					log.Printf("[engine] warning: failed to clear pending for %s: %v", tx, err)
+				}
+				if err := state.Save(); err != nil {
+					log.Printf("[engine] warning: failed to save state while reconciling pending: %v", err)
+				}
+			}
+		}
+	}
+
 	return &Engine{
 		monitorAddr:    monitorAddr,
 		mintPrice:      mintPrice,
@@ -300,10 +322,10 @@ func (e *Engine) fetchDepositsMock() ([]Deposit, error) {
 func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	log.Printf("[engine] minting NFT for sender %s (tx=%s)", dep.SenderAddr, dep.TxHash)
 
-	// Reserve mint counter (persist immediately) to avoid duplicates
-	id, err := e.state.ReserveNextMintID()
-	if err != nil {
-		return fmt.Errorf("failed to reserve mint id: %v", err)
+	// Reserve and persist the next mint id for this deposit to avoid gaps
+	id, rerr := e.state.ReservePendingMint(dep.TxHash)
+	if rerr != nil {
+		return fmt.Errorf("failed to reserve mint id: %v", rerr)
 	}
 	// Display name and hex-encoded on-chain asset name
 	displayName := fmt.Sprintf("Flowmass %d", id)
@@ -387,10 +409,14 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	}
 	log.Printf("[engine] submitted transaction: %s", txHash)
 
-	// Mark deposit processed immediately and persist state to avoid reprocessing on restart.
+	// Mark deposit processed and clear pending reservation (persisting both changes)
 	e.state.MarkProcessed(dep.TxHash)
-	if err := e.state.Save(); err != nil {
-		log.Printf("[engine] warning: failed to save state after marking processed: %v", err)
+	if err := e.state.ClearPending(dep.TxHash); err != nil {
+		// ClearPending persists state; if it fails, attempt a Save and warn
+		log.Printf("[engine] warning: failed to clear pending reservation: %v", err)
+		if serr := e.state.Save(); serr != nil {
+			log.Printf("[engine] warning: failed to save state after marking processed: %v", serr)
+		}
 	}
 
 	return nil
