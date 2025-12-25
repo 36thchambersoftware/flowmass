@@ -147,7 +147,6 @@ func (s *State) ReserveNextMintID() (int, error) {
 	data, err := json.MarshalIndent(map[string]interface{}{
 		"next_mint_counter":  s.NextMintCounter,
 		"processed_deposits": s.ProcessedDeposits,
-		"pending_deposits":   s.PendingDeposits,
 	}, "", "  ")
 	if err != nil {
 		return 0, err
@@ -168,7 +167,6 @@ func (s *State) Save() error {
 	data, err := json.MarshalIndent(map[string]interface{}{
 		"next_mint_counter":  s.NextMintCounter,
 		"processed_deposits": s.ProcessedDeposits,
-		"pending_deposits":   s.PendingDeposits,
 	}, "", "  ")
 	if err != nil {
 		return err

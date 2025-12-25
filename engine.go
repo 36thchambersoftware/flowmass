@@ -35,6 +35,11 @@ func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metada
 		return nil, err
 	}
 
+	// Ensure cardano-cli is present and can query the local node tip.
+	if err := ensureCardanoCLIAvailable(network, testnetMagic); err != nil {
+		return nil, err
+	}
+
 	// If we have a Blockfrost key, sync next mint counter with on-chain assets
 	if blockfrostKey == "" {
 		return nil, fmt.Errorf("no blockfrost key provided; skipping on-chain sync")
@@ -280,6 +285,26 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 		}
 	}
 	return max, nil
+}
+
+// ensureCardanoCLIAvailable checks that `cardano-cli` is in PATH and that
+// `cardano-cli query tip` succeeds for the configured network. The engine
+// requires a working cardano node and CLI in order to mint.
+func ensureCardanoCLIAvailable(network, testnetMagic string) error {
+	if _, err := exec.LookPath("cardano-cli"); err != nil {
+		return fmt.Errorf("cardano-cli not found in PATH: %v", err)
+	}
+
+	args := []string{"query", "tip"}
+	if network != "mainnet" && testnetMagic != "" {
+		args = append(args, "--testnet-magic", testnetMagic)
+	}
+	cmd := exec.Command("cardano-cli", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cardano-cli query tip failed: %v; output: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // fetchDepositsMock reads from mock_deposits.json for testing.
