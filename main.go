@@ -46,6 +46,7 @@ func main() {
 	log.Printf("Metadata: %s", *metadataFile)
 	log.Printf("State: %s", *stateFile)
 	log.Printf("Network: %s", *network)
+	log.Printf("Testnet Magic: %s", *testnetMagic)
 
 	// Initialize engine
 	if *network == "" {
