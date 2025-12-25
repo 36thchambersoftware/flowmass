@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -12,24 +13,8 @@ import (
 
 // GetCurrentSlot queries the current Cardano slot number.
 func GetCurrentSlot() (int64, error) {
-	// legacy default to mainnet; prefer calling code to pass network-aware variant
-	args := []string{"query", "tip", "--mainnet"}
-
-	cmd := exec.Command("cardano-cli", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("failed to query tip: %w", err)
-	}
-
-	// Parse JSON response
-	var result struct {
-		Slot int64 `json:"slot"`
-	}
-	if err := json.Unmarshal(out, &result); err != nil {
-		return 0, fmt.Errorf("failed to parse slot from response: %w", err)
-	}
-
-	return result.Slot, nil
+	// delegate to network-aware variant which validates socket path
+	return GetCurrentSlotNetwork("mainnet", "")
 }
 
 // netArgs returns CLI flags for the selected network.
@@ -41,10 +26,27 @@ func netArgs(network, testnetMagic string) []string {
 	return []string{"--testnet-magic", testnetMagic}
 }
 
+// socketAndNetArgs returns network args plus the required socket path flag.
+// It reads `CARDANO_NODE_SOCKET_PATH` from the environment and returns an
+// error if it's not set, since a working node socket is required.
+func socketAndNetArgs(network, testnetMagic string) ([]string, error) {
+	socket := os.Getenv("CARDANO_NODE_SOCKET_PATH")
+	if socket == "" {
+		return nil, fmt.Errorf("CARDANO_NODE_SOCKET_PATH is not set; cardano-cli requires a running node and socket path")
+	}
+	args := netArgs(network, testnetMagic)
+	args = append(args, "--socket-path", socket)
+	return args, nil
+}
+
 // GetCurrentSlotNetwork queries the current slot for the specified network.
 func GetCurrentSlotNetwork(network, testnetMagic string) (int64, error) {
 	args := []string{"query", "tip"}
-	args = append(args, netArgs(network, testnetMagic)...)
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return 0, err
+	}
+	args = append(args, netArgsWithSocket...)
 
 	cmd := exec.Command("cardano-cli", args...)
 	out, err := cmd.CombinedOutput()
@@ -97,8 +99,12 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 		"--out-file", txFile,
 	)
 
-	// append network args
-	args = append(args, netArgs(network, testnetMagic)...)
+	// append network args + socket
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return "", err
+	}
+	args = append(args, netArgsWithSocket...)
 
 	cmd := exec.Command("cardano-cli", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -119,8 +125,12 @@ func SignTransaction(txFile, signingKeyFile, network, testnetMagic string) (stri
 		"--out-file", signedFile,
 	}
 
-	// append network args
-	args = append(args, netArgs(network, testnetMagic)...)
+	// append network args + socket
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return "", err
+	}
+	args = append(args, netArgsWithSocket...)
 
 	cmd := exec.Command("cardano-cli", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -136,8 +146,11 @@ func SubmitTransaction(signedFile, network, testnetMagic string) (string, error)
 		"transaction", "submit",
 		"--tx-file", signedFile,
 	}
-
-	args = append(args, netArgs(network, testnetMagic)...)
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return "", err
+	}
+	args = append(args, netArgsWithSocket...)
 
 	cmd := exec.Command("cardano-cli", args...)
 	out, err := cmd.CombinedOutput()
@@ -167,8 +180,11 @@ func GetUTxOs(address, network, testnetMagic string) ([]UTxO, error) {
 		"--address", address,
 		"--out-file", utxoFile,
 	}
-
-	args = append(args, netArgs(network, testnetMagic)...)
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, netArgsWithSocket...)
 
 	cmd := exec.Command("cardano-cli", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
