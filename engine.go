@@ -157,11 +157,7 @@ func (e *Engine) pollDeposits() {
 
 // fetchDeposits retrieves unprocessed deposits matching the mint price.
 func (e *Engine) fetchDeposits() ([]Deposit, error) {
-	if e.blockfrostKey != "" {
-		return e.fetchDepositsBlockfrost()
-	}
-	// Fallback: check local mock file for testing
-	return e.fetchDepositsMock()
+	return e.fetchDepositsBlockfrost()
 }
 
 // fetchDepositsBlockfrost queries Blockfrost for UTxOs.
