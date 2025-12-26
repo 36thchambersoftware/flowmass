@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,10 +85,11 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	// --tx-out addr1qyfy6z5q2c370kju53dtjw6qwwmlt7tdjscjj97zval0668ueyljyfjl4lh2pdynrfz4a6mu4xdjyetzmyezugud4epqak50kt+1400000+"1 1d0cf168b30d27c6619e7ca7c18e02c8cebc011bf056216a1ea829ff.466c6f776d6173732039"
 	// Build tx-out with min-ADA and the minted asset.
 	// Use a conservative min-ADA value for NFT outputs (1_400_000 lovelace)
-	minUtxo := int64(1400000)
+	minUtxo := int64(1_400_000)
 	// Format: addr+minUtxo+"1 policyId.tokenName"
 	assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
 	txOut := fmt.Sprintf("%s+%d+\"%s\"", recipientAddr, minUtxo, assetSpec)
+	log.Printf("[cardano] built transaction: %s", txOut)
 
 	args = append(args,
 		"--mint", mintSpec,
