@@ -220,16 +220,6 @@ func GetUTxOs(address, network, testnetMagic string) ([]UTxO, error) {
 			}
 			result = append(result, UTxO{ID: k, Lovelace: lov, Assets: assets})
 		}
-	} else {
-		// Fallback: unmarshal into generic map and mark as unknown assets
-		var generic map[string]interface{}
-		if err := json.Unmarshal(data, &generic); err != nil {
-			return nil, fmt.Errorf("failed to parse utxos json: %w", err)
-		}
-		for k := range generic {
-			// unknown amounts; make Assets non-nil so callers treat as unusable
-			result = append(result, UTxO{ID: k, Lovelace: 0, Assets: map[string]uint64{"unknown": 1}})
-		}
 	}
 
 	if len(result) == 0 {

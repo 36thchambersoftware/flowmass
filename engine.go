@@ -256,7 +256,7 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 	}
 	max := 0
 	// fetch several pages to be safer (pagination)
-	for page := 1; page <= 10; page++ {
+	for page := 1; page <= 100; page++ {
 		// fetch this page
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		cmd := exec.CommandContext(ctx, "curl", "-s",
@@ -269,8 +269,8 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 		}
 
 		var assets []struct {
-			Asset     string `json:"asset"`
-			AssetName string `json:"asset_name"`
+			Asset    string `json:"asset"`
+			Quantity string `json:"quantity"`
 		}
 		if err := json.Unmarshal(out, &assets); err != nil {
 			// try to report the body for easier debugging
@@ -285,28 +285,15 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 		}
 
 		for _, a := range assets {
-			// asset_name is hex-encoded; if missing fetch asset details
-			assetNameHex := a.AssetName
-			if assetNameHex == "" {
-				// try to fetch full asset details
-				ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
-				detailCmd := exec.CommandContext(ctx2, "curl", "-s",
-					"-H", fmt.Sprintf("project_id:%s", blockfrostKey),
-					fmt.Sprintf("%s/assets/%s", base, a.Asset))
-				detailOut, derr := detailCmd.CombinedOutput()
-				cancel2()
-				if derr == nil {
-					var detail struct {
-						AssetName string `json:"asset_name"`
-					}
-					if jerr := json.Unmarshal(detailOut, &detail); jerr == nil {
-						assetNameHex = detail.AssetName
-					} else {
-						log.Printf("[engine] warning: failed to parse asset detail for %s: %v; out=%s", a.Asset, jerr, strings.TrimSpace(string(detailOut)))
-					}
-				} else {
-					log.Printf("[engine] warning: failed to fetch asset detail for %s: %v; out=%s", a.Asset, derr, strings.TrimSpace(string(detailOut)))
-				}
+			// Blockfrost /assets/policy returns objects with `asset` which is
+			// policyID + hex(asset_name). Extract hex suffix and decode it.
+			assetStr := a.Asset
+			var assetNameHex string
+			if strings.HasPrefix(assetStr, policyID) {
+				assetNameHex = assetStr[len(policyID):]
+			} else {
+				// fallback: if asset doesn't start with policyID, try to parse whole string
+				assetNameHex = assetStr
 			}
 
 			if assetNameHex == "" {
@@ -415,14 +402,33 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 		return fmt.Errorf("failed to get utxos: %v", err)
 	}
 
-	// collect lovelace-only candidates
+	// collect strict lovelace-only candidates (no non-lovelace assets at all)
 	var candidates []UTxO
 	for _, u := range utxos {
-		if u.Assets != nil && len(u.Assets) == 0 {
+		if (u.Assets == nil || len(u.Assets) == 0) && u.Lovelace > 0 {
 			candidates = append(candidates, u)
 		}
 	}
 	if len(candidates) == 0 {
+		// debug: report counts and sample UTxOs to help operator diagnose
+		total := len(utxos)
+		withAssets := 0
+		withLovelace := 0
+		for _, u := range utxos {
+			if u.Lovelace > 0 {
+				withLovelace++
+			}
+			if u.Assets != nil && len(u.Assets) > 0 {
+				withAssets++
+			}
+		}
+		log.Printf("[engine] debug: total_utxos=%d lovelace_utxos=%d utxos_with_assets=%d", total, withLovelace, withAssets)
+		for i, u := range utxos {
+			if i >= 8 {
+				break
+			}
+			log.Printf("[engine] debug utxo[%d]: id=%s lovelace=%d assets=%v", i, u.ID, u.Lovelace, u.Assets)
+		}
 		return fmt.Errorf("no lovelace-only UTxO available at monitor address")
 	}
 
