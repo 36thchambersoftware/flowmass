@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -304,16 +303,12 @@ func ensureCardanoCLIAvailable(network, testnetMagic string) error {
 	}
 
 	args := []string{"query", "tip"}
-	if network != "mainnet" {
-		if testnetMagic == "" {
-			return fmt.Errorf("network %q requires a numeric --testnet-magic value", network)
-		}
-		// validate numeric
-		if _, err := strconv.Atoi(testnetMagic); err != nil {
-			return fmt.Errorf("invalid --testnet-magic value %q: must be an integer", testnetMagic)
-		}
-		args = append(args, "--testnet-magic", testnetMagic)
+	// append network and socket args (socketAndNetArgs validates testnetMagic and socket)
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return err
 	}
+	args = append(args, netArgsWithSocket...)
 	cmd := exec.Command("cardano-cli", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
