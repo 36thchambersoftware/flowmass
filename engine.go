@@ -436,9 +436,9 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Lovelace > candidates[j].Lovelace })
 
 	// require mint price + buffer (2 ADA) to cover fees and change
-	required := e.mintPrice + 2000000
+	required := uint64(e.mintPrice + 2000000)
 	var selectedIns []string
-	var sum int64
+	var sum uint64
 	for _, c := range candidates {
 		selectedIns = append(selectedIns, c.ID)
 		sum += c.Lovelace

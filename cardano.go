@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -167,7 +168,7 @@ func SubmitTransaction(signedFile, network, testnetMagic string) (string, error)
 // UTxO represents a parsed UTxO with lovelace and any other assets.
 type UTxO struct {
 	ID       string
-	Lovelace int64
+	Lovelace uint64
 	Assets   map[string]uint64 // non-lovelace assets (policyid.assetname -> quantity)
 }
 
@@ -196,16 +197,16 @@ func GetUTxOs(address, network, testnetMagic string) ([]UTxO, error) {
 		return nil, fmt.Errorf("failed to read utxos file: %w", err)
 	}
 
-	// Try the common JSON shape: map[string][]{{unit,quantity}}
-	var raw map[string][]struct {
+	var result []UTxO
+
+	// Attempt old cardano-cli shape first: map[string][]{{unit,quantity}}
+	var rawOld map[string][]struct {
 		Unit     string `json:"unit"`
 		Quantity string `json:"quantity"`
 	}
-
-	var result []UTxO
-	if err := json.Unmarshal(data, &raw); err == nil {
-		for k, amounts := range raw {
-			var lov int64
+	if err := json.Unmarshal(data, &rawOld); err == nil {
+		for k, amounts := range rawOld {
+			var lov uint64
 			assets := make(map[string]uint64)
 			for _, a := range amounts {
 				if a.Unit == "lovelace" {
@@ -218,6 +219,71 @@ func GetUTxOs(address, network, testnetMagic string) ([]UTxO, error) {
 					}
 				}
 			}
+			result = append(result, UTxO{ID: k, Lovelace: lov, Assets: assets})
+		}
+	}
+
+	// If old shape produced nothing, try the newer cardano-cli JSON shape
+	if len(result) == 0 {
+		var generic map[string]map[string]interface{}
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber()
+		if err := dec.Decode(&generic); err != nil {
+			return nil, fmt.Errorf("failed to parse utxos json: %w", err)
+		}
+
+		for k, entry := range generic {
+			// entry should contain a `value` map
+			valueIface, ok := entry["value"]
+			if !ok {
+				// skip entries without value
+				continue
+			}
+			valueMap, ok := valueIface.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			var lov uint64
+			assets := make(map[string]uint64)
+
+			for unit, v := range valueMap {
+				if unit == "lovelace" {
+					// lovelace is always an integer; JSON decoder produced json.Number
+					switch vv := v.(type) {
+					case json.Number:
+						if parsed, perr := vv.Int64(); perr == nil {
+							lov = uint64(parsed)
+						}
+					case string:
+						if parsed, perr := strconv.ParseUint(vv, 10, 64); perr == nil {
+							lov = parsed
+						}
+					}
+					continue
+				}
+
+				// unit is a policy id; v should be a map of assetname->quantity
+				if inner, ok := v.(map[string]interface{}); ok {
+					for assetName, qtyIface := range inner {
+						var q uint64
+						switch qv := qtyIface.(type) {
+						case json.Number:
+							if parsed, perr := qv.Int64(); perr == nil {
+								q = uint64(parsed)
+							}
+						case string:
+							if parsed, err := strconv.ParseUint(qv, 10, 64); err == nil {
+								q = parsed
+							}
+						}
+						// key as policyid.assetname (assetName may already be hex)
+						key := unit + "." + assetName
+						assets[key] = q
+					}
+				}
+			}
+
 			result = append(result, UTxO{ID: k, Lovelace: lov, Assets: assets})
 		}
 	}
