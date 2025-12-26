@@ -81,11 +81,16 @@ func (s *State) ReservePendingMint(depositTx string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := s.NextMintCounter
-	s.NextMintCounter++
 	if s.PendingDeposits == nil {
 		s.PendingDeposits = make(map[string]int)
 	}
+	// If there's already a reservation for this deposit, return it (idempotent)
+	if id, ok := s.PendingDeposits[depositTx]; ok {
+		return id, nil
+	}
+
+	id := s.NextMintCounter
+	s.NextMintCounter++
 	s.PendingDeposits[depositTx] = id
 
 	data, err := json.MarshalIndent(map[string]interface{}{
