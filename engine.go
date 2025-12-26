@@ -170,15 +170,16 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 		base = "https://cardano-preprod.blockfrost.io/api/v0"
 	}
 	url := fmt.Sprintf("%s/addresses/%s/utxos", base, e.monitorAddr)
+	log.Printf("[engine] fetching deposits from Blockfrost URL=%s", url)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "curl", "-s",
 		"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
 		url)
 
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("blockfrost curl failed: %w", err)
+		return nil, fmt.Errorf("blockfrost curl failed: %v; output: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	// Try parsing expected array response first
@@ -221,7 +222,7 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 			txCmd := exec.CommandContext(txCtx, "curl", "-s",
 				"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
 				fmt.Sprintf("%s/txs/%s/utxos", base, u.TxHash))
-			if txOut, err := txCmd.Output(); err == nil {
+			if txOut, err := txCmd.CombinedOutput(); err == nil {
 				var txDetails struct {
 					Inputs []struct {
 						Address string `json:"address"`
@@ -230,6 +231,8 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 				if err := json.Unmarshal(txOut, &txDetails); err == nil && len(txDetails.Inputs) > 0 {
 					sender = txDetails.Inputs[0].Address
 				}
+			} else {
+				log.Printf("[engine] warning: failed to resolve tx sender for %s: %v; out=%s", u.TxHash, err, strings.TrimSpace(string(txOut)))
 			}
 
 			deposits = append(deposits, Deposit{
@@ -259,9 +262,9 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 		cmd := exec.CommandContext(ctx, "curl", "-s",
 			"-H", fmt.Sprintf("project_id:%s", blockfrostKey),
 			fmt.Sprintf("%s/assets/policy/%s?page=%d", base, policyID, page))
-		out, err := cmd.Output()
+		out, err := cmd.CombinedOutput()
 		if err != nil {
-			return max, err
+			return max, fmt.Errorf("blockfrost assets fetch failed: %v; output: %s", err, strings.TrimSpace(string(out)))
 		}
 
 		var assets []struct {
