@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -168,7 +169,9 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 		base = "https://cardano-preprod.blockfrost.io/api/v0"
 	}
 	url := fmt.Sprintf("%s/addresses/%s/utxos", base, e.monitorAddr)
-	cmd := exec.Command("curl", "-s",
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "curl", "-s",
 		"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
 		url)
 
@@ -212,7 +215,9 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 		if lovelace == lovelaceTarget {
 			// Resolve sender from transaction inputs via Blockfrost /txs/{hash}/utxos
 			sender := "unknown"
-			txCmd := exec.Command("curl", "-s",
+			txCtx, txCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer txCancel()
+			txCmd := exec.CommandContext(txCtx, "curl", "-s",
 				"-H", fmt.Sprintf("project_id:%s", e.blockfrostKey),
 				fmt.Sprintf("%s/txs/%s/utxos", base, u.TxHash))
 			if txOut, err := txCmd.Output(); err == nil {
@@ -248,7 +253,9 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 	max := 0
 	// fetch several pages to be safer (pagination)
 	for page := 1; page <= 10; page++ {
-		cmd := exec.Command("curl", "-s",
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "curl", "-s",
 			"-H", fmt.Sprintf("project_id:%s", blockfrostKey),
 			fmt.Sprintf("%s/assets/policy/%s?page=%d", base, policyID, page))
 		out, err := cmd.Output()
