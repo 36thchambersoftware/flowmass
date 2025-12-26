@@ -101,6 +101,11 @@ func (e *Engine) Start() {
 
 	log.Println("[engine] Starting deposit polling (60s interval)")
 
+	// Do an immediate poll on startup so we don't wait for the first tick.
+	go func() {
+		e.pollDeposits()
+	}()
+
 	for {
 		select {
 		case <-ticker.C:
@@ -119,6 +124,7 @@ func (e *Engine) Stop() {
 
 // pollDeposits checks for new 27 ADA deposits and mints NFTs.
 func (e *Engine) pollDeposits() {
+	log.Println("[engine] poll tick")
 	deposits, err := e.fetchDeposits()
 	if err != nil {
 		log.Printf("[engine] error fetching deposits: %v", err)
