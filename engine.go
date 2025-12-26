@@ -257,12 +257,13 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 	max := 0
 	// fetch several pages to be safer (pagination)
 	for page := 1; page <= 10; page++ {
+		// fetch this page
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
 		cmd := exec.CommandContext(ctx, "curl", "-s",
 			"-H", fmt.Sprintf("project_id:%s", blockfrostKey),
 			fmt.Sprintf("%s/assets/policy/%s?page=%d", base, policyID, page))
 		out, err := cmd.CombinedOutput()
+		cancel()
 		if err != nil {
 			return max, fmt.Errorf("blockfrost assets fetch failed: %v; output: %s", err, strings.TrimSpace(string(out)))
 		}
@@ -272,18 +273,46 @@ func getMaxOnChainFlowmass(policyID, blockfrostKey, network string) (int, error)
 			AssetName string `json:"asset_name"`
 		}
 		if err := json.Unmarshal(out, &assets); err != nil {
-			return max, err
+			// try to report the body for easier debugging
+			var errObj map[string]interface{}
+			if jerr := json.Unmarshal(out, &errObj); jerr == nil {
+				return max, fmt.Errorf("unexpected Blockfrost response for assets (page=%d): %v", page, errObj)
+			}
+			return max, fmt.Errorf("failed to parse Blockfrost assets response (page=%d): %v; raw=%s", page, err, strings.TrimSpace(string(out)))
 		}
 		if len(assets) == 0 {
 			break
 		}
 
 		for _, a := range assets {
-			// asset_name is hex-encoded; decode to text
-			if a.AssetName == "" {
+			// asset_name is hex-encoded; if missing fetch asset details
+			assetNameHex := a.AssetName
+			if assetNameHex == "" {
+				// try to fetch full asset details
+				ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+				detailCmd := exec.CommandContext(ctx2, "curl", "-s",
+					"-H", fmt.Sprintf("project_id:%s", blockfrostKey),
+					fmt.Sprintf("%s/assets/%s", base, a.Asset))
+				detailOut, derr := detailCmd.CombinedOutput()
+				cancel2()
+				if derr == nil {
+					var detail struct {
+						AssetName string `json:"asset_name"`
+					}
+					if jerr := json.Unmarshal(detailOut, &detail); jerr == nil {
+						assetNameHex = detail.AssetName
+					} else {
+						log.Printf("[engine] warning: failed to parse asset detail for %s: %v; out=%s", a.Asset, jerr, strings.TrimSpace(string(detailOut)))
+					}
+				} else {
+					log.Printf("[engine] warning: failed to fetch asset detail for %s: %v; out=%s", a.Asset, derr, strings.TrimSpace(string(detailOut)))
+				}
+			}
+
+			if assetNameHex == "" {
 				continue
 			}
-			if b, err := hex.DecodeString(a.AssetName); err == nil {
+			if b, err := hex.DecodeString(assetNameHex); err == nil {
 				name := string(b)
 				if strings.HasPrefix(name, "Flowmass ") {
 					var n int
