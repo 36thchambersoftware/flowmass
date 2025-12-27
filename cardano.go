@@ -72,6 +72,7 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 
 	// Prepare mint specification
 	mintSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
+	log.Printf("[cardano][mint-spec]: %s", mintSpec)
 
 	args := []string{
 		"conway", "transaction", "build",
