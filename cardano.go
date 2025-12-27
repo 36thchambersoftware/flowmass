@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -72,7 +71,7 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	txFile := "/tmp/tx.raw"
 
 	// Prepare mint specification
-	mintSpec := fmt.Sprintf(`'1 %s.%s'`, policyID, nftName)
+	mintSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
 	log.Printf("[cardano][mint-spec]: %s", mintSpec)
 
 	args := []string{
@@ -90,11 +89,8 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	minUtxo := uint64(1_400_000)
 	// Format: addr+minUtxo+"1 policyId.tokenName"
 	assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
-	txOut := fmt.Sprintf("%s+%d+'%s'", recipientAddr, minUtxo, assetSpec)
+	txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpec)
 	log.Printf("[cardano][tx-out]: %s", txOut)
-
-	flag.StringVar(&mintSpec, "mint", fmt.Sprintf(`'1 %s.%s'`, policyID, nftName), "")
-	flag.Parse()
 
 	args = append(args,
 		"--mint", mintSpec,
