@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -91,6 +92,9 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
 	txOut := fmt.Sprintf("%s+%d+'%s'", recipientAddr, minUtxo, assetSpec)
 	log.Printf("[cardano][tx-out]: %s", txOut)
+
+	flag.StringVar(&mintSpec, "--mint", "", fmt.Sprintf(`'1 %s.%s'`, policyID, nftName))
+	flag.Parse()
 
 	args = append(args,
 		"--mint", mintSpec,
