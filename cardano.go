@@ -92,7 +92,7 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	log.Printf("[cardano][tx-out]: %s", txOut)
 
 	args = append(args,
-		fmt.Sprintf("--mint=\"%s\"", mintSpec),
+		"--mint", mintSpec,
 		"--minting-script-file", scriptFile,
 		"--tx-out", txOut,
 		"--invalid-hereafter", strconv.FormatInt(invalidHereafter, 10),
