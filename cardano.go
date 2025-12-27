@@ -93,7 +93,7 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	txOut := fmt.Sprintf("%s+%d+'%s'", recipientAddr, minUtxo, assetSpec)
 	log.Printf("[cardano][tx-out]: %s", txOut)
 
-	flag.StringVar(&mintSpec, "--mint", "", fmt.Sprintf(`'1 %s.%s'`, policyID, nftName))
+	flag.StringVar(&mintSpec, "mint", "", fmt.Sprintf(`'1 %s.%s'`, policyID, nftName))
 	flag.Parse()
 
 	args = append(args,
