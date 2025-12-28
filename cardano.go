@@ -68,7 +68,7 @@ func GetCurrentSlotNetwork(network, testnetMagic string) (int64, error) {
 
 // BuildTransaction constructs a Cardano transaction with minting.
 func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, policyID, scriptFile, metadataFile string, invalidHereafter int64, network, testnetMagic string) (string, error) {
-	txFile := "/tmp/tx.raw"
+	txFile := "/var/lib/flowmass/tx.raw"
 
 	// Prepare mint specification
 	mintSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
