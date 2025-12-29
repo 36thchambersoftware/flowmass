@@ -124,7 +124,7 @@ func SignTransaction(txFile, signingKeyFile, network, testnetMagic string) (stri
 	signedFile := strings.TrimSuffix(txFile, filepath.Ext(txFile)) + ".signed"
 
 	args := []string{
-		"transaction", "sign",
+		"conway", "transaction", "sign",
 		"--tx-body-file", txFile,
 		"--signing-key-file", signingKeyFile,
 		"--out-file", signedFile,
@@ -148,7 +148,7 @@ func SignTransaction(txFile, signingKeyFile, network, testnetMagic string) (stri
 // SubmitTransaction submits a signed transaction to the blockchain.
 func SubmitTransaction(signedFile, network, testnetMagic string) (string, error) {
 	args := []string{
-		"transaction", "submit",
+		"conway", "transaction", "submit",
 		"--tx-file", signedFile,
 	}
 	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
