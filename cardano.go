@@ -131,11 +131,8 @@ func SignTransaction(txFile, signingKeyFile, network, testnetMagic string) (stri
 	}
 
 	// append network args + socket
-	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
-	if err != nil {
-		return "", err
-	}
-	args = append(args, netArgsWithSocket...)
+	netArgs := netArgs(network, testnetMagic)
+	args = append(args, netArgs...)
 
 	cmd := exec.Command("cardano-cli", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
