@@ -13,7 +13,7 @@ func main() {
 	monitorAddr := flag.String("monitor-address", os.Getenv("MONITOR_ADDRESS"), "Cardano address to monitor for deposits")
 	policyID := flag.String("policy-id", os.Getenv("POLICY_ID"), "NFT minting policy ID")
 	scriptFile := flag.String("script", os.Getenv("SCRIPT_FILE"), "Path to minting script file (e.g., policy.script)")
-	metadataFile := flag.String("metadata", os.Getenv("METADATA_FILE"), "Path to metadata template JSON")
+	// metadataFile := flag.String("metadata", os.Getenv("METADATA_FILE"), "Path to metadata template JSON")
 	stateFile := flag.String("state", os.Getenv("STATE_FILE"), "Path to state file (tracks mint counter and processed deposits)")
 	mintPrice := flag.Int64("mint-price", 27000000, "Mint price in lovelace (default: 27000000)")
 	signingKeyFile := flag.String("signing-key", os.Getenv("SIGNING_KEY_FILE"), "Path to signing key for transaction signing")
@@ -31,9 +31,9 @@ func main() {
 	if *scriptFile == "" {
 		log.Fatal("script is required (use -script flag or SCRIPT_FILE env var)")
 	}
-	if *metadataFile == "" {
-		log.Fatal("metadata is required (use -metadata flag or METADATA_FILE env var)")
-	}
+	// if *metadataFile == "" {
+	// 	log.Fatal("metadata is required (use -metadata flag or METADATA_FILE env var)")
+	// }
 	if *stateFile == "" {
 		*stateFile = "flowmass.state"
 	}
@@ -43,7 +43,7 @@ func main() {
 	log.Printf("Mint Price: %d lovelace", *mintPrice)
 	log.Printf("Policy ID: %s", *policyID)
 	log.Printf("Script: %s", *scriptFile)
-	log.Printf("Metadata: %s", *metadataFile)
+	// log.Printf("Metadata: %s", *metadataFile)
 	log.Printf("State: %s", *stateFile)
 	log.Printf("Network: %s", *network)
 	log.Printf("Testnet Magic: %s", *testnetMagic)
@@ -64,7 +64,7 @@ func main() {
 		*mintPrice,
 		*policyID,
 		*scriptFile,
-		*metadataFile,
+		// *metadataFile,
 		*stateFile,
 		*blockfrostKey,
 		*network,

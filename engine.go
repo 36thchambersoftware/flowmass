@@ -15,11 +15,11 @@ import (
 
 // Engine orchestrates deposit monitoring and NFT minting.
 type Engine struct {
-	monitorAddr    string
-	mintPrice      int64
-	policyID       string
-	scriptFile     string
-	metadataFile   string
+	monitorAddr string
+	mintPrice   int64
+	policyID    string
+	scriptFile  string
+	// metadataFile   string
 	state          *State
 	blockfrostKey  string
 	network        string
@@ -29,7 +29,7 @@ type Engine struct {
 }
 
 // NewEngine creates a new minting engine.
-func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metadataFile, stateFile, blockfrostKey, network, testnetMagic, signingKeyFile string) (*Engine, error) {
+func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, stateFile, blockfrostKey, network, testnetMagic, signingKeyFile string) (*Engine, error) {
 	// Load or initialize state
 	state, err := LoadState(stateFile)
 	if err != nil {
@@ -80,11 +80,11 @@ func NewEngine(monitorAddr string, mintPrice int64, policyID, scriptFile, metada
 	}
 
 	return &Engine{
-		monitorAddr:    monitorAddr,
-		mintPrice:      mintPrice,
-		policyID:       policyID,
-		scriptFile:     scriptFile,
-		metadataFile:   metadataFile,
+		monitorAddr: monitorAddr,
+		mintPrice:   mintPrice,
+		policyID:    policyID,
+		scriptFile:  scriptFile,
+		// metadataFile:   metadataFile,
 		state:          state,
 		blockfrostKey:  blockfrostKey,
 		network:        network,
@@ -460,7 +460,7 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 		hexName,
 		e.policyID,
 		e.scriptFile,
-		e.metadataFile,
+		// e.metadataFile,
 		invalidHereafter,
 		e.network,
 		e.testnetMagic,
@@ -469,6 +469,8 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 		return fmt.Errorf("failed to build transaction: %v", err)
 	}
 	log.Printf("[engine] built transaction: %s", txFile)
+
+	return nil
 
 	// 3. Sign transaction
 	signedFile, err := SignTransaction(txFile, e.signingKeyFile, e.network, e.testnetMagic)

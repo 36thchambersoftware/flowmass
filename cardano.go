@@ -67,7 +67,7 @@ func GetCurrentSlotNetwork(network, testnetMagic string) (int64, error) {
 }
 
 // BuildTransaction constructs a Cardano transaction with minting.
-func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, policyID, scriptFile, metadataFile string, invalidHereafter int64, network, testnetMagic string) (string, error) {
+func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, policyID, scriptFile string, invalidHereafter int64, network, testnetMagic string) (string, error) {
 	txFile := "/var/lib/flowmass/tx.raw"
 
 	// Prepare mint specification
@@ -91,6 +91,15 @@ func BuildTransaction(utxoIns []string, monitorAddr, recipientAddr, nftName, pol
 	assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
 	txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpec)
 	log.Printf("[cardano][tx-out]: %s", txOut)
+
+	metadata, err := MetadataTemplate(nftName)
+	if err != nil {
+		return "", fmt.Errorf("failed to build metadata template: %w", err)
+	}
+	metadataFile := fmt.Sprintf("/var/lib/flowmass/%s.json", nftName)
+	SaveMetadataToFile(metadata, metadataFile)
+
+	// Insert the NFT metadata under the correct policy ID and token name
 
 	args = append(args,
 		"--mint", mintSpec,
