@@ -494,6 +494,8 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 		}
 	}
 
+	Webhook(fmt.Sprintf("Minted NFT: %s", displayName))
+
 	return nil
 }
 

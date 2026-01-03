@@ -75,6 +75,8 @@ func main() {
 		log.Fatalf("Failed to initialize engine: %v", err)
 	}
 
+	initWebhook()
+
 	// Start engine
 	go eng.Start()
 	log.Println("Engine started. Press CTRL-C to exit.")
