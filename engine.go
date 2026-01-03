@@ -470,8 +470,6 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	}
 	log.Printf("[engine] built transaction: %s", txFile)
 
-	return nil
-
 	// 3. Sign transaction
 	signedFile, err := SignTransaction(txFile, e.signingKeyFile, e.network, e.testnetMagic)
 	if err != nil {
