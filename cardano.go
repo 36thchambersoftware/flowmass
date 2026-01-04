@@ -401,13 +401,18 @@ func CalculateMinUtxo(address string, txOut string, network, testnetMagic string
 	if err != nil {
 		return 0, fmt.Errorf("failed to calculate min utxo: %w (output: %s)", err, string(out))
 	}
+	log.Printf("[cardano][min-utxo] output: %s", string(out))
 
 	// Parse the output to get the min utxo value
-	var minUtxo uint64
-	outputStr := strings.TrimSpace(string(out))
-	_, err = fmt.Sscanf(outputStr, "%d", &minUtxo)
+	// The output looks like "Coin 2685130" so we need to parse the number
+	fields := strings.Fields(string(out))
+	if len(fields) != 2 {
+		return 0, fmt.Errorf("unexpected min-utxo output: %s", out)
+	}
+
+	minUtxo, err := strconv.ParseUint(fields[1], 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse min utxo from output: %w", err)
+		return 0, err
 	}
 
 	return minUtxo, nil
