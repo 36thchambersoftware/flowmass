@@ -332,21 +332,20 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 		// Build tx-out with min-ADA and the minted assets.
 		// Combine all nftNames into a single tx-out
 		// Use a conservative min-ADA value for NFT outputs (1_400_000 lovelace)
-		minUtxo := uint64(1_400_000)
 		var assetSpecs []string
 		for _, nftName := range nftNames {
 			assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
 			assetSpecs = append(assetSpecs, assetSpec)
 		}
 		assetSpecStr := strings.Join(assetSpecs, "+")
-		txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpecStr)
-		args = append(args, "--tx-out", txOut)
+		txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, 1_400_000, assetSpecStr)
 
 		minUtxo, err := CalculateMinUtxo(monitorAddr, txOut, network, testnetMagic)
 		if err != nil {
 			return "", fmt.Errorf("failed to calculate min utxo: %w", err)
 		}
 		txOut = fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpecStr)
+		args = append(args, "--tx-out", txOut)
 
 		// Prepare metadata file combining all NFTs
 		combinedMetadata, err := MetadatasTemplate(nftNames)
