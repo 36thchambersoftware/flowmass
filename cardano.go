@@ -330,10 +330,10 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 		minUtxo := uint64(1_400_000)
 		for _, nftName := range nftNames {
 			assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
-			args = append(args, "--tx-out", assetSpec)
+			txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpec)
+			log.Printf("[cardano][tx-out]: %s", txOut)
+			args = append(args, "--tx-out", txOut)
 		}
-		txOut := fmt.Sprintf("%s+%d", recipientAddr, minUtxo)
-		log.Printf("[cardano][tx-out]: %s", txOut)
 
 		// Prepare metadata file combining all NFTs
 		combinedMetadata, err := MetadatasTemplate(nftNames)
@@ -346,7 +346,6 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 
 		args = append(args,
 			"--minting-script-file", scriptFile,
-			"--tx-out", txOut,
 			"--invalid-hereafter", strconv.FormatInt(invalidHereafter, 10),
 			"--metadata-json-file", metadataFile,
 			"--change-address", monitorAddr,
