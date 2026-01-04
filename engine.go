@@ -139,10 +139,20 @@ func (e *Engine) pollDeposits() {
 
 		log.Printf("[engine] found deposit: %s -> %d lovelace (tx=%s)", dep.SenderAddr, dep.Amount, dep.TxHash)
 
+		mintCount := int(dep.Amount / e.mintPrice)
+		log.Printf("[engine] deposit qualifies for %d mints", mintCount)
 		// Mint NFT for this deposit
-		if err := e.mintNFTForDeposit(dep); err != nil {
-			log.Printf("[engine] failed to mint for deposit %s: %v", dep.TxHash, err)
-			continue
+		if mintCount > 1 {
+			log.Printf("[engine] minting %d NFTs for deposit %s", mintCount, dep.TxHash)
+			if err := e.mintNFTsForDeposit(dep); err != nil {
+				log.Printf("[engine] failed to mint for deposit %s: %v", dep.TxHash, err)
+				continue
+			}
+		} else {
+			if err := e.mintNFTForDeposit(dep); err != nil {
+				log.Printf("[engine] failed to mint for deposit %s: %v", dep.TxHash, err)
+				continue
+			}
 		}
 
 		// Mark processed
@@ -214,7 +224,7 @@ func (e *Engine) fetchDepositsBlockfrost() ([]Deposit, error) {
 				fmt.Sscanf(a.Quantity, "%d", &lovelace)
 			}
 		}
-		if lovelace == lovelaceTarget {
+		if lovelace%lovelaceTarget == 0 {
 			// Resolve sender from transaction inputs via Blockfrost /txs/{hash}/utxos
 			sender := "unknown"
 			txCtx, txCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -499,9 +509,125 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 	return nil
 }
 
+// Function MintNFTsForDeposit mints multiple NFTs for a single deposit.
+// Needs to do everything in ONE transaction per deposit to avoid multiple tx fees.
+func (e *Engine) mintNFTsForDeposit(dep Deposit) error {
+	log.Printf("[engine] minting %d NFTs for sender %s (tx=%s)", dep.MintCount, dep.SenderAddr, dep.TxHash)
+
+	// Reserve and persist the next mint ids for this deposit to avoid gaps
+	var reservedIDs []int
+	for i := 0; i < dep.MintCount; i++ {
+		id, rerr := e.state.ReservePendingMint(fmt.Sprintf("%s-%d", dep.TxHash, i))
+		if rerr != nil {
+			return fmt.Errorf("failed to reserve mint id: %v", rerr)
+		}
+		reservedIDs = append(reservedIDs, id)
+	}
+
+	// Get current slot
+	slot, err := GetCurrentSlotNetwork(e.network, e.testnetMagic)
+	if err != nil {
+		return fmt.Errorf("failed to get current slot: %v", err)
+	}
+	invalidHereafter := slot + 10000
+
+	log.Printf("[engine] minting NFTs (slot=%d, invalid-hereafter=%d)", slot, invalidHereafter)
+
+	// 1. Get UTxO from monitor address (choose lovelace-only UTxOs that cover mint + fee buffer)
+	utxos, err := GetUTxOs(e.monitorAddr, e.network, e.testnetMagic)
+	if err != nil {
+		return fmt.Errorf("failed to get utxos: %v", err)
+	}
+
+	// collect strict lovelace-only candidates (no non-lovelace assets at all)
+	var candidates []UTxO
+	for _, u := range utxos {
+		if (u.Assets == nil || len(u.Assets) == 0) && u.Lovelace > 0 {
+			candidates = append(candidates, u)
+		}
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("no lovelace-only UTxO available at monitor address")
+	}
+
+	// sort descending by lovelace to minimize inputs
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Lovelace > candidates[j].Lovelace })
+
+	// require mint price * count + buffer (2 ADA) to cover fees and change
+	required := uint64(e.mintPrice*int64(dep.MintCount) + 2000000)
+	var selectedIns []string
+	var sum uint64
+	for _, c := range candidates {
+		selectedIns = append(selectedIns, c.ID)
+		sum += c.Lovelace
+		if sum >= required {
+			break
+		}
+	}
+	if sum < required {
+		return fmt.Errorf("insufficient lovelace in lovelace-only UTxOs: have=%d required=%d", sum, required)
+	}
+
+	log.Printf("[engine] selected UTxOs: %v (total lovelace=%d)", selectedIns, sum)
+
+	// 2. Build mint transaction that mints all NFTs
+	var hexNames []string
+	for _, id := range reservedIDs {
+		displayName := fmt.Sprintf("Flowmass %d", id)
+		hexName := hex.EncodeToString([]byte(displayName))
+		hexNames = append(hexNames, hexName)
+	}
+
+	txFile, err := BuildTransactionMultipleMints(
+		selectedIns,
+		e.monitorAddr,
+		dep.SenderAddr,
+		hexNames,
+		e.policyID,
+		e.scriptFile,
+		invalidHereafter,
+		e.network,
+		e.testnetMagic,
+		dep,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to build transaction: %v", err)
+	}
+	log.Printf("[engine] built transaction: %s", txFile)
+
+	// 3. Sign transaction
+	signedFile, err := SignTransaction(txFile, e.signingKeyFile, e.network, e.testnetMagic)
+	if err != nil {
+		return fmt.Errorf("failed to sign transaction: %v", err)
+	}
+	log.Printf("[engine] signed transaction: %s", signedFile)
+
+	// 4. Submit transaction
+	txHash, err := SubmitTransaction(signedFile, e.network, e.testnetMagic)
+	if err != nil {
+		return fmt.Errorf("failed to submit transaction: %v", err)
+	}
+	log.Printf("[engine] submitted transaction: %s", txHash)
+
+	// Mark deposit processed and clear pending reservations (persisting both changes)
+	e.state.MarkProcessed(dep.TxHash)
+	if err := e.state.ClearPending(dep.TxHash); err != nil {
+		// ClearPending persists state; if it fails, attempt a Save and warn
+		log.Printf("[engine] warning: failed to clear pending reservation: %v", err)
+		if serr := e.state.Save(); serr != nil {
+			log.Printf("[engine] warning: failed to save state after marking processed: %v", serr)
+		}
+	}
+
+	Webhook(fmt.Sprintf("Minted %d NFTs for deposit %s", dep.MintCount, dep.TxHash))
+
+	return nil
+}
+
 // Deposit represents an incoming ADA transfer.
 type Deposit struct {
 	TxHash     string
 	SenderAddr string
 	Amount     int64
+	MintCount  int
 }

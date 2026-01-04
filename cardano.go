@@ -305,6 +305,72 @@ func GetUTxOs(address, network, testnetMagic string) ([]UTxO, error) {
 	return result, nil
 }
 
+// BuildTransactionMultipleMints constructs a Cardano transaction with multiple minting.
+func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr string, nftNames []string, policyID, scriptFile string, invalidHereafter int64, network, testnetMagic string, deposit Deposit) (string, error) {
+	{
+		txFile := "/var/lib/flowmass/tx.raw"
+
+		args := []string{
+			"conway", "transaction", "build",
+		}
+
+		// add all inputs
+		for _, in := range utxoIns {
+			args = append(args, "--tx-in", in)
+		}
+
+		// Prepare mint specification
+		for _, nftName := range nftNames {
+			mintSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
+			log.Printf("[cardano][mint-spec]: %s", mintSpec)
+			args = append(args, "--mint", mintSpec)
+		}
+
+		// Build tx-out with min-ADA and the minted assets.
+		minUtxo := uint64(1_400_000)
+		for _, nftName := range nftNames {
+			assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
+			args = append(args, "--tx-out", assetSpec)
+		}
+		txOut := fmt.Sprintf("%s+%d", recipientAddr, minUtxo)
+		log.Printf("[cardano][tx-out]: %s", txOut)
+
+		// Prepare metadata file combining all NFTs
+		combinedMetadata, err := MetadatasTemplate(nftNames)
+		if err != nil {
+			return "", fmt.Errorf("failed to build metadata template: %w", err)
+		}
+
+		metadataFile := fmt.Sprintf("/var/lib/flowmass/%s.json", deposit.TxHash)
+		SaveMetadataToFile(combinedMetadata, metadataFile)
+
+		args = append(args,
+			"--minting-script-file", scriptFile,
+			"--tx-out", txOut,
+			"--invalid-hereafter", strconv.FormatInt(invalidHereafter, 10),
+			"--metadata-json-file", metadataFile,
+			"--change-address", monitorAddr,
+			"--witness-override", strconv.Itoa(len(nftNames)),
+			"--out-file", txFile,
+		)
+
+		// append network args + socket
+		netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, netArgsWithSocket...)
+		log.Printf("[cardano][build][transaction] running cardano-cli with args: %v", args)
+
+		cmd := exec.Command("cardano-cli", args...)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("failed to build transaction: %w (output: %s)", err, string(output))
+		}
+
+		return txFile, nil
+	}
+}
+
 // SendNFT constructs and submits a transaction to send an NFT to recipient.
 func SendNFT(nftID, recipientAddr, signingKeyFile string) (string, error) {
 	// TODO: Implement full NFT transfer workflow
