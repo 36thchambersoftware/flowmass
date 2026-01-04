@@ -139,11 +139,11 @@ func (e *Engine) pollDeposits() {
 
 		log.Printf("[engine] found deposit: %s -> %d lovelace (tx=%s)", dep.SenderAddr, dep.Amount, dep.TxHash)
 
-		mintCount := int(dep.Amount / e.mintPrice)
-		log.Printf("[engine] deposit qualifies for %d mints", mintCount)
+		dep.MintCount = int(dep.Amount / e.mintPrice)
+		log.Printf("[engine] deposit qualifies for %d mints", dep.MintCount)
 		// Mint NFT for this deposit
-		if mintCount > 1 {
-			log.Printf("[engine] minting %d NFTs for deposit %s", mintCount, dep.TxHash)
+		if dep.MintCount > 1 {
+			log.Printf("[engine] minting %d NFTs for deposit %s", dep.MintCount, dep.TxHash)
 			if err := e.mintNFTsForDeposit(dep); err != nil {
 				log.Printf("[engine] failed to mint for deposit %s: %v", dep.TxHash, err)
 				continue
