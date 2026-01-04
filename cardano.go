@@ -396,13 +396,6 @@ func CalculateMinUtxo(address string, txOut string, network, testnetMagic string
 	// Add the --tx-out argument
 	args = append(args, "--tx-out", txOut)
 
-	// append network args + socket
-	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
-	if err != nil {
-		return 0, err
-	}
-	args = append(args, netArgsWithSocket...)
-
 	cmd := exec.Command("cardano-cli", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
