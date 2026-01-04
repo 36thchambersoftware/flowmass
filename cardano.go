@@ -387,7 +387,6 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 func CalculateMinUtxo(address string, txOut string, network, testnetMagic string) (uint64, error) {
 	args := []string{
 		"conway", "transaction", "calculate-min-required-utxo",
-		"--address", address,
 	}
 
 	// Prepare the --protocol-params-file argument
