@@ -342,6 +342,12 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 		txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpecStr)
 		args = append(args, "--tx-out", txOut)
 
+		minUtxo, err := CalculateMinUtxo(monitorAddr, txOut, network, testnetMagic)
+		if err != nil {
+			return "", fmt.Errorf("failed to calculate min utxo: %w", err)
+		}
+		txOut = fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpecStr)
+
 		// Prepare metadata file combining all NFTs
 		combinedMetadata, err := MetadatasTemplate(nftNames)
 		if err != nil {
@@ -375,6 +381,44 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 
 		return txFile, nil
 	}
+}
+
+// Create function calculate the min utxo for the given address and tx-outs
+func CalculateMinUtxo(address string, txOut string, network, testnetMagic string) (uint64, error) {
+	args := []string{
+		"transaction", "calculate-min-utxo",
+		"--address", address,
+	}
+
+	// Prepare the --protocol-params-file argument
+	protocolParamsFile := "/home/cardano/cardano/pparams.json"
+	args = append(args, "--protocol-params-file", protocolParamsFile)
+
+	// Add the --tx-out argument
+	args = append(args, "--tx-out", txOut)
+
+	// append network args + socket
+	netArgsWithSocket, err := socketAndNetArgs(network, testnetMagic)
+	if err != nil {
+		return 0, err
+	}
+	args = append(args, netArgsWithSocket...)
+
+	cmd := exec.Command("cardano-cli", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate min utxo: %w (output: %s)", err, string(out))
+	}
+
+	// Parse the output to get the min utxo value
+	var minUtxo uint64
+	outputStr := strings.TrimSpace(string(out))
+	_, err = fmt.Sscanf(outputStr, "%d", &minUtxo)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse min utxo from output: %w", err)
+	}
+
+	return minUtxo, nil
 }
 
 // SendNFT constructs and submits a transaction to send an NFT to recipient.
