@@ -320,20 +320,27 @@ func BuildTransactionMultipleMints(utxoIns []string, monitorAddr, recipientAddr 
 		}
 
 		// Prepare mint specification
+		// combine all nftNames into mint specs string to add to args
+		var mintSpecs []string
 		for _, nftName := range nftNames {
 			mintSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
-			log.Printf("[cardano][mint-spec]: %s", mintSpec)
-			args = append(args, "--mint", mintSpec)
+			mintSpecs = append(mintSpecs, mintSpec)
 		}
+		mintSpecStr := strings.Join(mintSpecs, " + ")
+		args = append(args, "--mint", mintSpecStr)
 
 		// Build tx-out with min-ADA and the minted assets.
+		// Combine all nftNames into a single tx-out
+		// Use a conservative min-ADA value for NFT outputs (1_400_000 lovelace)
 		minUtxo := uint64(1_400_000)
+		var assetSpecs []string
 		for _, nftName := range nftNames {
 			assetSpec := fmt.Sprintf("1 %s.%s", policyID, nftName)
-			txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpec)
-			log.Printf("[cardano][tx-out]: %s", txOut)
-			args = append(args, "--tx-out", txOut)
+			assetSpecs = append(assetSpecs, assetSpec)
 		}
+		assetSpecStr := strings.Join(assetSpecs, "+")
+		txOut := fmt.Sprintf("%s+%d+%s", recipientAddr, minUtxo, assetSpecStr)
+		args = append(args, "--tx-out", txOut)
 
 		// Prepare metadata file combining all NFTs
 		combinedMetadata, err := MetadatasTemplate(nftNames)
