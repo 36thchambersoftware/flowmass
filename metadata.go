@@ -63,7 +63,7 @@ func MetadataTemplate(hexName string) (string, error) {
 			}
 		}
 	}
-}`, hexName, name)
+}`, name, name)
 
 	return template, nil
 }
@@ -93,7 +93,7 @@ func MetadatasTemplate(hexNames []string) (string, error) {
 				"twitter": "https://x.com/PREEB_Pool",
 				"discord": "https://discord.gg/aHrZJuEKZG",
 				"type": "Shark"
-			}`, hexName, name)
+			}`, name, name)
 
 		if entries != "" {
 			entries += ",\n"

@@ -394,7 +394,7 @@ func (e *Engine) mintNFTForDeposit(dep Deposit) error {
 		return fmt.Errorf("failed to reserve mint id: %v", rerr)
 	}
 	// Display name and hex-encoded on-chain asset name
-	displayName := fmt.Sprintf("Flowmass %d", id)
+	displayName := fmt.Sprintf("Flowmass%d", id)
 	hexName := hex.EncodeToString([]byte(displayName))
 
 	// Get current slot
@@ -573,7 +573,7 @@ func (e *Engine) mintNFTsForDeposit(dep Deposit) error {
 	// 2. Build mint transaction that mints all NFTs
 	var hexNames []string
 	for _, id := range reservedIDs {
-		displayName := fmt.Sprintf("Flowmass %d", id)
+		displayName := fmt.Sprintf("Flowmass%d", id)
 		hexName := hex.EncodeToString([]byte(displayName))
 		hexNames = append(hexNames, hexName)
 	}
