@@ -162,6 +162,9 @@ func (e *Engine) pollDeposits() {
 		}
 
 		log.Printf("[engine] successfully minted NFT for deposit %s", dep.TxHash)
+
+		max := GetOnChainCount(e.network, e.policyID, e.blockfrostKey)
+		Webhook(fmt.Sprintf("Total Flowmass: %d", max))
 	}
 }
 
@@ -630,4 +633,15 @@ type Deposit struct {
 	SenderAddr string
 	Amount     int64
 	MintCount  int
+}
+
+// Get the total count of minted NFTs on-chain
+func GetOnChainCount(network string, policyID, blockfrostKey string) int {
+	max, err := getMaxOnChainFlowmass(policyID, blockfrostKey, network)
+	if err != nil {
+		log.Printf("Error fetching on-chain count: %v", err)
+		return 0
+	}
+	log.Printf("Total on-chain Flowmass NFTs: %d", max)
+	return max
 }
