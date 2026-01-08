@@ -163,8 +163,8 @@ func (e *Engine) pollDeposits() {
 
 		log.Printf("[engine] successfully minted NFT for deposit %s", dep.TxHash)
 
-		max := GetOnChainCount(e.network, e.policyID, e.blockfrostKey)
-		Webhook(fmt.Sprintf("Total Flowmass: %d", max))
+		// max := GetOnChainCount(e.network, e.policyID, e.blockfrostKey)
+		// Webhook(fmt.Sprintf("Total Flowmass: %d", max))
 	}
 }
 
